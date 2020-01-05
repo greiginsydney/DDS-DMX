@@ -1,6 +1,22 @@
+/******************************************************************************
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License 
+as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied 
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with this program.  If not, see 
+<http://www.gnu.org/licenses/>.
+
+This code is part of the Disco Death Star project. This is its DMX interface
+ 
+References:
+https://github.com/greiginsydney/DDS-DMX
+https://github.com/greiginsydney/FastLED-DiscoDeathStar
+*****************************************************************************/
+
+
 #include <dmx.h>
 
-int DmxGoodLed = 32;
+int resetDDS = 32;
 int enablePin = 21;    //default on ESP32
 
 // DIP Switch definitions:
@@ -31,7 +47,7 @@ int brightnessB0 =  5; // LSB
 
 int DmxChannel = 0;
 uint8_t currentPattern = 33; // Default to an invalid pattern
-uint8_t lastPattern = 999;   // Save the last pattern and only write to screen if it changes
+uint8_t lastPattern = 34;    // Save the last pattern and only write to screen if it changes
 int currentSpeed = 0;
 int lastSpeed = 0;
 int currentBrightness = 0;
@@ -39,14 +55,14 @@ int lastBrightness = 0;
 
 void setup()
 {
-  pinMode(DmxGoodLed, OUTPUT);
-  digitalWrite(DmxGoodLed, LOW);
+  pinMode(resetDDS, OUTPUT);  // Break glass in an emergency: Go HIGH to force a hardware reset of the DDS.
+  digitalWrite(resetDDS, LOW);
 
   // Set the ESP32 DMX board permanently to Input.
   pinMode(enablePin, OUTPUT);
   digitalWrite(enablePin, LOW);
 
-   // DIP switches:
+  // DIP switches:
   pinMode(DipB0, INPUT);
   pinMode(DipB1, INPUT);
   pinMode(DipB2, INPUT);
@@ -87,7 +103,7 @@ void setup()
 
   Serial.begin(115200);
 
-  DmxChannel = ReadDmxChannel();
+  DmxChannel = ReadDmxChannel(); //Read the DIP switches to determine our base (first) DMX channel
    
   DMX::Initialize();
 }
@@ -119,15 +135,15 @@ int Read3Bits()
 
 void loop()
 {
-  if (DMX::IsHealthy())
-  {
-     digitalWrite(DmxGoodLed, HIGH);
-  }
-  else
-  {
-    digitalWrite(DmxGoodLed, LOW); 
-  }
-
+  //Retired: I ran out of IO pins!  
+  //if (DMX::IsHealthy())
+  //{
+     //digitalWrite(DmxGoodLed, HIGH); 
+  //}
+  //else
+  //{
+    //digitalWrite(DmxGoodLed, LOW); 
+  //}
   
   currentPattern = DMX::Read(DmxChannel);
   if (lastPattern != currentPattern)
@@ -144,7 +160,7 @@ void loop()
   currentSpeed = DMX::Read(DmxChannel + 1);
   if (lastSpeed != currentSpeed)
   {
-    Serial.println("DMX Channel = " + String(DmxChannel + 1) + ", Pattern = " + String(currentSpeed));
+    Serial.println("DMX Channel = " + String(DmxChannel + 1) + ", Speed = " + String(currentSpeed));
     lastSpeed = currentSpeed;
     (lastSpeed & 0b10000000) ? digitalWrite(speedB2, HIGH) : digitalWrite(speedB2, LOW) ;
     (lastSpeed & 0b01000000) ? digitalWrite(speedB1, HIGH) : digitalWrite(speedB1, LOW) ;
@@ -154,10 +170,29 @@ void loop()
   currentBrightness = DMX::Read(DmxChannel + 2);
   if (lastBrightness != currentBrightness)
   {
-    Serial.println("DMX Channel = " + String(DmxChannel + 2) + ", Pattern = " + String(currentBrightness));
+    Serial.println("DMX Channel = " + String(DmxChannel + 2) + ", Brightness = " + String(currentBrightness));
     lastBrightness = currentBrightness;
-    (lastBrightness & 0b10000000) ? digitalWrite(brightnessB2, HIGH) : digitalWrite(brightnessB2, LOW) ;
-    (lastBrightness & 0b01000000) ? digitalWrite(brightnessB1, HIGH) : digitalWrite(brightnessB1, LOW) ;
-    (lastBrightness & 0b00100000) ? digitalWrite(brightnessB0, HIGH) : digitalWrite(brightnessB0, LOW) ;
+    switch (currentBrightness)
+    {
+      case 255:  // 255 is banned! I don't want you to set the channel full on accidentally - or easily - and kill the DDS
+        digitalWrite(resetDDS, LOW);
+        digitalWrite(brightnessB2, LOW) ;
+        digitalWrite(brightnessB1, LOW) ;
+        digitalWrite(brightnessB0, LOW) ;
+        break;
+      case 251 ... 254:
+        Serial.println("Have just reset the DDS. Brightness value = " + String(currentBrightness));
+        digitalWrite(resetDDS, HIGH);
+        digitalWrite(brightnessB2, LOW) ;
+        digitalWrite(brightnessB1, LOW) ;
+        digitalWrite(brightnessB0, LOW) ;
+        break;
+      default:
+        digitalWrite(resetDDS, LOW);
+        (lastBrightness & 0b10000000) ? digitalWrite(brightnessB2, HIGH) : digitalWrite(brightnessB2, LOW) ;
+        (lastBrightness & 0b01000000) ? digitalWrite(brightnessB1, HIGH) : digitalWrite(brightnessB1, LOW) ;
+        (lastBrightness & 0b00100000) ? digitalWrite(brightnessB0, HIGH) : digitalWrite(brightnessB0, LOW) ;
+        break;
+    }
   }   
 }
